@@ -1,5 +1,6 @@
 //! Bindings to Windows `PCCERT_CONTEXT` APIs.
 
+use std::convert::TryFrom;
 use std::ffi::{c_void, CStr, OsString};
 use std::io;
 use std::mem;
@@ -67,7 +68,6 @@ impl HashAlgorithm {
 pub struct CertContext(*const Cryptography::CERT_CONTEXT);
 
 unsafe impl Sync for CertContext {}
-unsafe impl Send for CertContext {}
 
 impl Drop for CertContext {
     fn drop(&mut self) {
@@ -676,6 +676,46 @@ pub enum ValidUses {
     /// Certificate is valid for uses specified. No entries means that the certificate
     /// has no valid uses.
     Oids(Vec<String>),
+}
+
+#[derive(Clone, Debug)]
+pub struct CertContextWithStore(CertStore, CertContext);
+
+unsafe impl Sync for CertContextWithStore {}
+unsafe impl Send for CertContextWithStore {}
+
+// impl TryFrom<CertContext> for CertContextWithStore {
+//     type Error = io::Error;
+
+//     fn try_from(value: CertContext) -> Result<Self, Self::Error> {
+//         let mut out = CertStore::open_in_memory()?;
+//         out.add_cert(&value, crate::cert_store::CertAdd::UseExisting)?;
+//         Ok(CertContextWithStore(out))
+//     }
+// }
+
+impl CertContextWithStore {
+    pub fn cert(&self) -> CertContext {
+        self.1.clone()
+    }
+
+    pub fn store(&self) -> &CertStore {
+        &self.0
+    }
+
+    pub fn store_mut(&mut self) -> &mut CertStore {
+        &mut self.0
+    }
+
+    pub unsafe fn bundle_unchecked(store: CertStore, cert: CertContext) -> Self {
+        Self(store, cert)
+    }
+
+    pub fn bundle(store: &CertStore, cert: &CertContext) -> io::Result<Self> {
+        let mut new_store = store.clone();
+        let cert = new_store.add_cert(cert, crate::cert_store::CertAdd::UseExisting)?;
+        Ok(Self(new_store, cert))
+    }
 }
 
 #[cfg(test)]

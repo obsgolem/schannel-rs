@@ -8,6 +8,7 @@ use windows_sys::Win32::Security::Authentication::Identity;
 use windows_sys::Win32::Security::{Credentials, Cryptography};
 
 use crate::cert_context::CertContext;
+use crate::cert_store::CertStore;
 use crate::Inner;
 
 static UNISP_NAME: &[u8] = null_terminate!(Identity::UNISP_NAME);
@@ -184,7 +185,7 @@ impl Protocol {
 pub struct Builder {
     supported_algorithms: Option<Vec<Algorithm>>,
     enabled_protocols: Option<Vec<Protocol>>,
-    certs: Vec<CertContext>,
+    certs: CertStore,
 }
 
 impl Builder {
@@ -214,9 +215,10 @@ impl Builder {
     ///
     /// Clients often do not call this function and either depend on Schannel to
     /// find an appropriate certificate or create a certificate later if needed.
-    pub fn cert(&mut self, cx: CertContext) -> &mut Builder {
-        self.certs.push(cx);
-        self
+    pub fn cert(&mut self, cx: CertContext) -> io::Result<&mut Builder> {
+        self.certs
+            .add_cert(&cx, crate::cert_store::CertAdd::UseExisting)?;
+        Ok(self)
     }
 
     /// Creates a new `SchannelCred`.
@@ -237,7 +239,7 @@ impl Builder {
                     .map(|p| p.dword(direction))
                     .fold(0, |acc, p| acc | p);
             }
-            let mut certs = self.certs.iter().map(|c| c.as_inner()).collect::<Vec<_>>();
+            let mut certs = self.certs.certs().map(|c| c.as_inner()).collect::<Vec<_>>();
             cred_data.cCreds = certs.len() as u32;
             cred_data.paCred = certs.as_mut_ptr() as _;
 

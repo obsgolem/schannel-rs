@@ -36,7 +36,12 @@ impl Drop for CertStore {
 
 impl Clone for CertStore {
     fn clone(&self) -> CertStore {
-        unsafe { CertStore(Cryptography::CertDuplicateStore(self.0)) }
+        let mut out = CertStore::open_in_memory().expect("Unable to clone certificate store");
+        for cert in self.certs() {
+            out.add_cert(&cert, CertAdd::UseExisting)
+                .expect("Unable to copy certificate into cloned certificate store");
+        }
+        out
     }
 }
 
@@ -150,6 +155,27 @@ impl CertStore {
         }
     }
 
+    /// Opens up the specified key store within the context of the local machine.
+    ///
+
+    /// Additonal MSDN docs https://docs.microsoft.com/en-us/windows/win32/api/wincrypt/nf-wincrypt-certopenstore#remarks
+    pub fn open_in_memory() -> io::Result<CertStore> {
+        unsafe {
+            let store = Cryptography::CertOpenStore(
+                Cryptography::CERT_STORE_PROV_MEMORY,
+                Cryptography::CERT_QUERY_ENCODING_TYPE::default(),
+                Cryptography::HCRYPTPROV_LEGACY::default(),
+                0,
+                std::ptr::null_mut(),
+            );
+            if !store.is_null() {
+                Ok(CertStore(store))
+            } else {
+                Err(io::Error::last_os_error())
+            }
+        }
+    }
+
     /// Imports a PKCS#12-encoded key/certificate pair, returned as a
     /// `CertStore` instance.
     ///
@@ -242,6 +268,12 @@ impl CertStore {
             ret.set_len(blob.cbData as usize);
             Ok(ret)
         }
+    }
+}
+
+impl Default for CertStore {
+    fn default() -> Self {
+        CertStore::open_in_memory().expect("Unable to initialize empty certificate store")
     }
 }
 
